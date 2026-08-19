@@ -1,0 +1,41 @@
+{
+  "services": [
+    {
+      "key": "design",
+      "label": "Дизайн",
+      "icon": "design",
+      "price": null,
+      "description": "Превью, логотипы, оформление серверов и каналов, баннеры, иконки."
+    },
+    {
+      "key": "editor",
+      "label": "Эдитор",
+      "icon": "editor",
+      "price": null,
+      "description": "Монтаж видео, нарезки, GIF-анимации, визуальные эффекты."
+    },
+    {
+      "key": "reklama",
+      "label": "Реклама",
+      "icon": "reklama",
+      "price": null,
+      "description": "Реклама и коллаборации — размещение объявлений о вашем проекте/сервере."
+    },
+    {
+      "key": "bots",
+      "label": "Боты",
+      "icon": "bots",
+      "price": null,
+      "description": "Разработка ботов под заказ — Discord и Telegram: модерация, тикеты, экономика, автоматизация и т.д."
+    },
+    {
+      "key": "другое",
+      "label": "Другое",
+      "icon": "cart",
+      "price": null,
+      "description": "Выполним заказ, в других сферах, если это возможно"
+    }
+  ],
+  "panel_channel_id": 1538589012586139689,
+  "panel_message_id": 1538646656755564645
+}

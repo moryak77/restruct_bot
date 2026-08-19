@@ -1,0 +1,72 @@
+{
+  "balance": 0,
+  "next_id": 9,
+  "transactions": [
+    {
+      "id": 1,
+      "type": "deposit",
+      "amount": 1000000,
+      "author_id": 1119564959085506692,
+      "reason": null,
+      "timestamp": "2026-08-14T10:04:23.714510+00:00"
+    },
+    {
+      "id": 2,
+      "type": "withdraw",
+      "amount": 1000000,
+      "author_id": 1119564959085506692,
+      "reason": "надо",
+      "timestamp": "2026-08-14T10:04:37.890871+00:00"
+    },
+    {
+      "id": 3,
+      "type": "deposit",
+      "amount": 100000,
+      "author_id": 1119564959085506692,
+      "reason": "1",
+      "timestamp": "2026-08-14T21:04:17.132291+00:00"
+    },
+    {
+      "id": 4,
+      "type": "withdraw",
+      "amount": 100000,
+      "author_id": 1119564959085506692,
+      "reason": "-",
+      "timestamp": "2026-08-14T21:04:31.992134+00:00"
+    },
+    {
+      "id": 5,
+      "type": "deposit",
+      "amount": 10000,
+      "author_id": 1119564959085506692,
+      "reason": null,
+      "timestamp": "2026-08-16T20:41:58.615550+00:00"
+    },
+    {
+      "id": 6,
+      "type": "withdraw",
+      "amount": 10000,
+      "author_id": 1119564959085506692,
+      "reason": null,
+      "timestamp": "2026-08-16T20:42:06.943159+00:00"
+    },
+    {
+      "id": 7,
+      "type": "deposit",
+      "amount": 1,
+      "author_id": 1119564959085506692,
+      "reason": "-",
+      "timestamp": "2026-08-18T21:27:45.174188+00:00"
+    },
+    {
+      "id": 8,
+      "type": "withdraw",
+      "amount": 1,
+      "author_id": 1119564959085506692,
+      "reason": "-",
+      "timestamp": "2026-08-18T21:27:51.069564+00:00"
+    }
+  ],
+  "panel_channel_id": 1538589013055897784,
+  "panel_message_id": 1538646935815196783
+}
