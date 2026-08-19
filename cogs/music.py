@@ -48,6 +48,9 @@ YTDL_OPTS = {
     "no_warnings": True,
     "default_search": "ytsearch1",
     "source_address": "0.0.0.0",
+    # На датацентровых/хостинговых IP YouTube чаще отдаёт 403 на клиент по умолчанию
+    # (android_vr) — "android" и "web_safari" на практике надёжнее в такой обстановке.
+    "extractor_args": {"youtube": {"player_client": ["android", "web_safari"]}},
 }
 
 FFMPEG_EXECUTABLE = config.get("music.ffmpeg_path") or "ffmpeg"
