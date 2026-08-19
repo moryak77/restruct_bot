@@ -1,0 +1,15 @@
+.env
+config.json
+__pycache__/
+*.pyc
+data/*.json
+!data/.gitkeep
+.venv/
+venv/
+bot.lock
+
+# PyInstaller build output for anticheat-checker/ — содержит собранный exe-дубликат и
+# реальные логи запуска (данные с чьего-то ПК), не для репозитория. Рабочая копия exe,
+# которую реально раздаёт бот через /anticheat, лежит в data/anticheat_checker/ и остаётся.
+anticheat-checker/dist/
+anticheat-checker/build/

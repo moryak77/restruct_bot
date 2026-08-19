@@ -1,0 +1,133 @@
+{
+  "family_name": "RESTRUCT",
+  "brand_color": "0xB5BAC1",
+  "footer_icon_url": "",
+  "channels": {
+    "logs": 0,
+    "join_to_create": 0,
+    "voice_category": 0,
+    "news": 0,
+    "welcome": 0,
+    "database": 0,
+    "recruit_apply": 0
+  },
+  "autorole": {
+    "role_ids": [
+      0
+    ]
+  },
+  "moderation": {
+    "leader_role_ids": [
+      0
+    ],
+    "mute_role_id": 0,
+    "requester_role_id": 0,
+    "request_channel_id": 0,
+    "log_channel_id": 0
+  },
+  "roles": {
+    "log_channel_id": 0
+  },
+  "restruct_announce": {
+    "role_id": 0,
+    "channel_ids": [
+      0
+    ]
+  },
+  "log_channels": {
+    "bank": 0,
+    "cars": 0,
+    "contracts": 0,
+    "tickets": 0,
+    "warns": 0,
+    "music": 0,
+    "shop": 0
+  },
+  "tickets": {
+    "curator": {
+      "category_id": 0,
+      "role_id": 0,
+      "extra_role_ids": [
+        0
+      ]
+    },
+    "recruit": {
+      "category_id": 0,
+      "role_id": 0,
+      "accept_role_id": 0,
+      "in_progress_role_id": 0
+    },
+    "general": {
+      "category_id": 0,
+      "role_id": 0,
+      "extra_role_ids": [
+        0
+      ]
+    }
+  },
+  "vzp": {
+    "positions": {
+      "Руководство": 0,
+      "Рекрутинг": 0,
+      "Бизнес": 0
+    }
+  },
+  "warns": {
+    "threshold": 3,
+    "escalation_role_ids": [
+      0
+    ],
+    "auto_ban_days": 3,
+    "auto_expire_days": 7
+  },
+  "bank": {
+    "withdraw_role_ids": [
+      0
+    ]
+  },
+  "contracts": {
+    "role_ids": [
+      0
+    ]
+  },
+  "music": {
+    "spotify_client_id": null,
+    "spotify_client_secret": null,
+    "max_queue": 50,
+    "idle_disconnect_minutes": 5,
+    "ffmpeg_path": null
+  },
+  "redux": {
+    "role_id": 0,
+    "options": [
+      {
+        "key": "example",
+        "label": "EXAMPLE-REDUX",
+        "description": "",
+        "video_url": "",
+        "download_url": ""
+      }
+    ]
+  },
+  "yoomoney": {
+    "wallet": null,
+    "token": null,
+    "poll_interval_seconds": 25,
+    "order_expiry_minutes": 60
+  },
+  "yookassa": {
+    "shop_id": null,
+    "secret_key": null,
+    "webhook_relay_channel_id": 0,
+    "return_url": "https://discord.com"
+  },
+  "shop": {
+    "quote_moderation_channel_id": 0
+  },
+  "stats": {
+    "refresh_seconds": 300
+  },
+  "help": {
+    "refresh_seconds": 43200
+  }
+}

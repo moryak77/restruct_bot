@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<title>Restruct - Checker</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="bg-glow"></div>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <img class="brand-logo" src="assets/avatar.png" alt="" />
+      <div class="brand-text">
+        <div class="brand-name">RESTRUCT</div>
+        <div class="brand-sub">Checker</div>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <div class="nav-indicator" id="navIndicator"></div>
+      <button class="nav-item active" data-view="scan"><span class="nav-icon">🛡️</span><span>Проверка</span></button>
+      <button class="nav-item" data-view="processes"><span class="nav-icon">🗂️</span><span>Все процессы</span></button>
+      <button class="nav-item" data-view="disk"><span class="nav-icon">🗄️</span><span>Скан диска</span></button>
+      <button class="nav-item" data-view="recycle"><span class="nav-icon">🗑️</span><span>Корзина</span></button>
+      <button class="nav-item" data-view="activity"><span class="nav-icon">🕘</span><span>Активность</span></button>
+      <button class="nav-item" data-view="logs"><span class="nav-icon">📄</span><span>Логи</span></button>
+      <button class="nav-item" data-view="about"><span class="nav-icon">ℹ️</span><span>О программе</span></button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="privacy-badge"><span class="pulse-dot"></span>Ничего не отправляется в сеть</div>
+    </div>
+  </aside>
+
+  <main class="content">
+
+    <!-- ================= ПРОВЕРКА ================= -->
+    <section id="view-scan" class="view active">
+      <div class="hero-banner">
+        <img src="assets/banner.png" alt="" />
+        <div class="hero-banner-fade"></div>
+      </div>
+      <header class="view-header">
+        <h1>Проверка на читы</h1>
+        <p>Запускается только по указанию администрации, во время очной проверки.</p>
+      </header>
+
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-value" id="statProcesses">—</div><div class="stat-label">процессов проверено</div></div>
+        <div class="stat-card accent-danger"><div class="stat-value" id="statFlags">—</div><div class="stat-label">совпадений найдено</div></div>
+        <div class="stat-card accent-warn"><div class="stat-value" id="statGame">—</div><div class="stat-label">процесс игры</div></div>
+        <div class="stat-card"><div class="stat-value" id="statModules">—</div><div class="stat-label">модулей в игре</div></div>
+      </div>
+
+      <div class="controls-row">
+        <button class="btn btn-primary" id="scanBtn"><span class="btn-icon">▶</span>Начать проверку</button>
+        <button class="btn btn-ghost" id="copyScanBtn" disabled>Скопировать отчёт</button>
+        <span class="status-text" id="scanStatus">Готово к запуску.</span>
+      </div>
+
+      <div class="progress-track"><div class="progress-fill" id="scanProgress"></div></div>
+
+      <div class="panel console-panel">
+        <div class="panel-title">Консоль проверки</div>
+        <div class="console" id="scanConsole"><div class="console-line muted">Нажмите «Начать проверку», чтобы просканировать систему.</div></div>
+      </div>
+    </section>
+
+    <!-- ================= ВСЕ ПРОЦЕССЫ ================= -->
+    <section id="view-processes" class="view">
+      <header class="view-header">
+        <h1>Все процессы</h1>
+        <p>Полный список того, что сейчас запущено на компьютере — для ручного осмотра.</p>
+      </header>
+
+      <div class="toolbar">
+        <input type="text" id="processSearch" class="search-input" placeholder="Поиск по имени процесса..." />
+        <button class="btn btn-ghost" id="refreshProcessesBtn"><span class="btn-icon">🔄</span>Обновить</button>
+        <span class="status-text" id="processCount"></span>
+      </div>
+
+      <div class="panel table-panel">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th>PID</th><th>Процесс</th><th>Путь</th><th>Статус</th></tr></thead>
+            <tbody id="processTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel detail-panel" id="processDetailPanel">
+        <div class="panel-title">Детали процесса</div>
+        <div class="detail-grid" id="processDetailGrid">
+          <div class="detail-empty">Выберите процесс в таблице выше.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= СКАН ДИСКА ================= -->
+    <section id="view-disk" class="view">
+      <header class="view-header">
+        <h1>Скан диска</h1>
+        <p>Полный обход всех локальных дисков файл за файлом — включая System32 и остальные системные папки.</p>
+        <p class="mono-hint" id="diskRoots">Разделы: —</p>
+      </header>
+
+      <div class="stat-grid stat-grid-3">
+        <div class="stat-card"><div class="stat-value" id="diskScanned">0</div><div class="stat-label">файлов просканировано</div></div>
+        <div class="stat-card accent-danger"><div class="stat-value" id="diskMatches">0</div><div class="stat-label">совпадений найдено</div></div>
+        <div class="stat-card"><div class="stat-value" id="diskTime">0 сек</div><div class="stat-label">затрачено времени</div></div>
+      </div>
+
+      <div class="controls-row">
+        <button class="btn btn-primary" id="diskScanBtn"><span class="btn-icon">▶</span>Начать скан диска</button>
+        <button class="btn btn-ghost" id="copyDiskBtn" disabled>Скопировать отчёт</button>
+        <span class="status-text" id="diskStatus">Готово к запуску.</span>
+      </div>
+
+      <div class="progress-track"><div class="progress-fill indeterminate" id="diskProgress"></div></div>
+
+      <div class="panel console-panel">
+        <div class="panel-title">Найденные совпадения</div>
+        <div class="console" id="diskConsole"><div class="console-line muted">Нажмите «Начать скан диска», чтобы просканировать все файлы на компьютере.</div></div>
+      </div>
+    </section>
+
+    <!-- ================= КОРЗИНА ================= -->
+    <section id="view-recycle" class="view">
+      <header class="view-header">
+        <h1>Корзина</h1>
+        <p>Недавно удалённые файлы со всех дисков — частый способ спрятать чит прямо перед проверкой.</p>
+      </header>
+
+      <div class="toolbar">
+        <button class="btn btn-ghost" id="refreshRecycleBtn"><span class="btn-icon">🔄</span>Обновить</button>
+        <span class="status-text" id="recycleCount"></span>
+      </div>
+
+      <div class="panel table-panel table-panel-tall">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th>Удалён</th><th>Исходный путь</th><th>Размер</th><th>Статус</th></tr></thead>
+            <tbody id="recycleTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= АКТИВНОСТЬ ================= -->
+    <section id="view-activity" class="view">
+      <header class="view-header">
+        <h1>Недавняя активность</h1>
+        <p>Что запускалось и какие пути вводились вручную — по данным Windows Prefetch и MRU-ключей реестра.</p>
+        <p class="mono-hint" id="everythingStatus"></p>
+      </header>
+
+      <div class="toolbar">
+        <button class="btn btn-ghost" id="refreshActivityBtn"><span class="btn-icon">🔄</span>Обновить</button>
+      </div>
+
+      <div class="panel table-panel">
+        <div class="panel-title">Недавно запущенные программы (Prefetch)</div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th>Программа</th><th>Последний запуск</th><th>Статус</th></tr></thead>
+            <tbody id="prefetchTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel table-panel">
+        <div class="panel-title">Недавние команды и пути (реестр)</div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th>Источник</th><th>Значение</th><th>Статус</th></tr></thead>
+            <tbody id="mruTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ЛОГИ ================= -->
+    <section id="view-logs" class="view">
+      <header class="view-header">
+        <h1>Логи</h1>
+        <p id="logsDirHint">Каждая проверка сохраняется файлом рядом с программой — ничего не отправляется, только локально.</p>
+      </header>
+
+      <div class="logs-layout">
+        <div class="panel logs-list-panel">
+          <div class="panel-title">Файлы</div>
+          <div class="logs-list" id="logsList"><div class="detail-empty">Логов пока нет.</div></div>
+        </div>
+        <div class="panel logs-view-panel">
+          <div class="console" id="logViewer"><div class="console-line muted">Выберите файл слева, чтобы посмотреть содержимое.</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= О ПРОГРАММЕ ================= -->
+    <section id="view-about" class="view">
+      <div class="hero-banner">
+        <img src="assets/banner.png" alt="" />
+        <div class="hero-banner-fade"></div>
+      </div>
+      <header class="view-header">
+        <h1>О программе</h1>
+      </header>
+      <div class="panel about-panel">
+        <div class="about-brand">
+          <img src="assets/avatar.png" alt="" class="about-avatar" />
+          <div>
+            <div class="about-brand-name">Restruct - Checker</div>
+            <div class="about-brand-sub">Семья RESTRUCT</div>
+          </div>
+        </div>
+        <p>Локальная проверка на читы — запускается по указанию администрации во время очной проверки (созвон/скриншер).</p>
+        <p>Программа ничего не отправляет в сеть, не работает в фоне и не запускается скрытно — весь результат виден только на этом экране.</p>
+      </div>
+      <div class="about-footer">Семья RESTRUCT</div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toastContainer" class="toast-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

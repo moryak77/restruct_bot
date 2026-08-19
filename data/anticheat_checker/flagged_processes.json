@@ -1,0 +1,51 @@
+{
+  "_comment": "Отредактируйте эти списки под вашу реальную практику модерации — здесь только общие примеры, актуальные названия чит-менюшек под GTA5RP знаете вы, не автор скрипта.",
+
+  "flagged_process_names": [
+    "cheatengine-x86_64.exe",
+    "cheatengine-i386.exe",
+    "cheatengine-x86_64-sse4-avx2.exe",
+    "x64dbg.exe",
+    "x32dbg.exe",
+    "extremeinjector.exe",
+    "injector.exe",
+    "dllinjector.exe",
+    "processhacker.exe",
+    "artmoney.exe"
+  ],
+
+  "game_process_names": [
+    "gta5.exe",
+    "gtavrp.exe",
+    "ragemp_v.exe",
+    "ragemp.exe",
+    "fivem.exe",
+    "fivem_gta5.exe"
+  ],
+
+  "suspicious_module_dir_markers": [
+    "\\temp\\",
+    "\\appdata\\local\\temp\\",
+    "\\downloads\\",
+    "\\desktop\\",
+    "\\appdata\\roaming\\"
+  ],
+
+  "flagged_file_names": [
+    "cheatengine-x86_64.exe",
+    "cheatengine-i386.exe",
+    "x64dbg.exe",
+    "x32dbg.exe",
+    "extremeinjector.exe",
+    "dllinjector.exe",
+    "artmoney.exe"
+  ],
+
+  "flagged_file_keywords": [],
+
+  "skip_dir_names": [
+    "$recycle.bin",
+    "system volume information",
+    "windows.old"
+  ]
+}
