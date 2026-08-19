@@ -309,13 +309,13 @@
   },
   "yoomoney": {
     "wallet": "4100118128075809",
-    "token": "4100118128075809.31C87C6BA3B17F138D77FDC73B222BB7660725596AB97DA373DF2719F1DE1221B198A9E0A3C0890E2A166636D415098F2A48E9B2C1D53AC676F575D64D6A78E679B1042575A51D9094CF1E63336246493BD0B1B70A2D65E9EE8A1BDC71F1EA4BC1EBE005AF1C3B6DC8CD39134AF3E57B10A0E9432E003C5E1D056C6B52E96F92",
+    "token": null,
     "poll_interval_seconds": 25,
     "order_expiry_minutes": 60
   },
   "yookassa": {
     "shop_id": "1437985",
-    "secret_key": "test_ekKe2uaqaJoycp2oyoRF8yvjVZceu_xDRuegaT8Fe9g",
+    "secret_key": null,
     "webhook_relay_channel_id": 1538589010337992827,
     "return_url": "https://discord.com"
   },
