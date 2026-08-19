@@ -115,7 +115,7 @@
     "spotify_client_secret": null,
     "max_queue": 50,
     "idle_disconnect_minutes": 5,
-    "ffmpeg_path": "C:\\Users\\rusla\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0-full_build\\bin\\ffmpeg.exe"
+    "ffmpeg_path": null
   },
   "redux": {
     "role_id": 1538641158933315604,
