@@ -1,0 +1,9 @@
+.git
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+bot.lock
+anticheat-checker/dist/
+anticheat-checker/build/
