@@ -1,0 +1,23 @@
+[Unit]
+Description=RESTRUCT Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Замените на реальный путь, куда склонирован репозиторий на сервере
+WorkingDirectory=/opt/restruct-bot
+ExecStart=/opt/restruct-bot/.venv/bin/python bot.py
+Restart=always
+RestartSec=5
+# Не даём процессу расплодиться в бесконечном цикле рестартов при постоянном крэше
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Замените на реального пользователя, от имени которого должен работать бот
+# (не root — создайте отдельного системного пользователя, см. DEPLOY.md)
+User=restruct
+Group=restruct
+
+[Install]
+WantedBy=multi-user.target
