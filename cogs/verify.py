@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import os
 import secrets
 import string
 
@@ -195,7 +196,10 @@ class VerifyAPI:
             return
 
         host = config.get("verification.api_host", "127.0.0.1") or "127.0.0.1"
-        port = int(config.get("verification.api_port", 8787) or 8787)
+        # Render (и большинство PaaS) сами назначают порт через $PORT и ждут, что
+        # приложение слушает именно его — конфиговое значение остаётся для локалки.
+        env_port = os.environ.get("PORT")
+        port = int(env_port) if env_port else int(config.get("verification.api_port", 8787) or 8787)
 
         app = web.Application()
         app.router.add_get("/health", self._handle_health)
