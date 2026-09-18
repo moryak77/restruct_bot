@@ -13,12 +13,12 @@ ADMIN_PERMS = disnake.Permissions(manage_guild=True)
 
 # Свой набор кастомных иконок (Tabler Icons, тот же серый тон #B5BAC1, что у остального бота).
 _REDUX_ICON_IDS = {
-    "tags": 1538632148943118426,
-    "info": 1538632155150688336,
-    "flame": 1538632160569856104,
-    "users": 1538632035755630603,
-    "bolt": 1538632166659854398,
-    "target": 1538632172947243091,
+    "tags": 1550545251566096460,
+    "info": 1550545256729288794,
+    "flame": 1550545261485359195,
+    "users": 1550153295031566376,
+    "bolt": 1550545268452106361,
+    "target": 1550545274408271904,
 }
 REDUX_EMOJI = {key: disnake.PartialEmoji(name=f"role_{key}", id=emoji_id) for key, emoji_id in _REDUX_ICON_IDS.items()}
 

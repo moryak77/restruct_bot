@@ -8,7 +8,7 @@ from pathlib import Path
 import disnake
 from disnake.ext import commands, tasks
 
-from core.config import DISCORD_TOKEN, TEST_GUILDS
+from core.config import DISCORD_TOKEN
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 log = logging.getLogger("restruct-bot")
@@ -89,7 +89,9 @@ STATUSES: list[str] = [
 
 bot = commands.InteractionBot(
     intents=intents,
-    test_guilds=TEST_GUILDS,
+    # Глобальная синхронизация (без test_guilds) — иначе бейдж "поддерживает команды"
+    # у бота не показывается везде. Изменения команд теперь доезжают до Discord с
+    # задержкой до часа вместо мгновенной локальной синхронизации на сервер.
     activity=disnake.CustomActivity(name=STATUSES[0]),
 )
 
@@ -155,10 +157,7 @@ async def on_ready():
         for message, _ in startup_refreshes:
             log.info(message)
 
-    if TEST_GUILDS:
-        log.info("Слэш-команды синхронизируются локально на сервер(а): %s", TEST_GUILDS)
-    else:
-        log.info("Слэш-команды синхронизируются глобально (обновление может занять до часа).")
+    log.info("Слэш-команды синхронизируются глобально (обновление может занять до часа).")
 
 
 def main() -> None:

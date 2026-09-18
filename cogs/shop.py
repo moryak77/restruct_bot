@@ -34,12 +34,12 @@ def payments_configured() -> bool:
 
 # Свой набор кастомных иконок (Tabler Icons, тот же серый тон #B5BAC1, что у остального бота).
 _SHOP_ICON_IDS = {
-    "cart": 1538632113321025627,
-    "tag": 1538632119469871194,
-    "design": 1538632124935045202,
-    "editor": 1538632131062800505,
-    "reklama": 1538632137027358862,
-    "bots": 1538632142903574548,
+    "cart": 1550545279370002562,
+    "tag": 1550545284163964928,
+    "design": 1550545288953991228,
+    "editor": 1550545294255456266,
+    "reklama": 1550545303026012200,
+    "bots": 1550545308348448859,
 }
 SHOP_EMOJI = {key: disnake.PartialEmoji(name=f"shop_{key}", id=emoji_id) for key, emoji_id in _SHOP_ICON_IDS.items()}
 

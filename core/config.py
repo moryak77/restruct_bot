@@ -12,6 +12,9 @@ load_dotenv(ROOT_DIR / ".env")
 
 CONFIG_PATH = ROOT_DIR / "config.json"
 CONFIG_EXAMPLE_PATH = ROOT_DIR / "config.example.json"
+# config.json больше не в git (там реальный секрет) — на Render он доезжает до контейнера
+# через Secret Files, которые Render монтирует именно по этому пути.
+RENDER_SECRET_CONFIG_PATH = Path("/etc/secrets/config.json")
 
 
 class Config:
@@ -23,7 +26,12 @@ class Config:
         self.reload()
 
     def reload(self) -> None:
-        source = self._path if self._path.exists() else CONFIG_EXAMPLE_PATH
+        if RENDER_SECRET_CONFIG_PATH.exists():
+            source = RENDER_SECRET_CONFIG_PATH
+        elif self._path.exists():
+            source = self._path
+        else:
+            source = CONFIG_EXAMPLE_PATH
         with open(source, "r", encoding="utf-8") as f:
             self._data = json.load(f)
 
