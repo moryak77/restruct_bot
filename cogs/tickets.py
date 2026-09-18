@@ -3,15 +3,20 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import io
+import logging
 
+import aiohttp
 import disnake
 from disnake.ext import commands
 
 from core.branding import FAMILY_NAME, base_embed, panel_file_kwargs, send_panel
 from core.checks import is_staff
-from core.config import config, log_channel_id
+from core.config import GUILD_ID, config, log_channel_id
+from core.http import get_session
 from core.icons import icon, icon_tag
 from core.storage import tickets_store
+
+log = logging.getLogger("restruct-bot")
 
 ADMIN_PERMS = disnake.Permissions(manage_guild=True)
 
@@ -552,6 +557,137 @@ async def _create_ticket_channel(
     return channel
 
 
+async def create_recruit_ticket_from_site(
+    bot: commands.InteractionBot,
+    discord_id: int,
+    subtype: str,
+    site_ticket_id: str,
+    site_ticket_number: int | None,
+    fields: list[tuple[str, str]],
+) -> dict:
+    """То же самое, что и _create_ticket_channel(..., "recruit", ...), но заявка подана
+    через сайт, а не в самом Discord — поэтому нет disnake.Interaction, от которого обычно
+    берутся guild/author. Канал, запись в tickets_store и попадание в «Активные заявки»
+    получаются идентичными, чтобы сотрудники модерации не видели разницы."""
+    guild = bot.get_guild(int(GUILD_ID)) if GUILD_ID.isdigit() else None
+    if guild is None:
+        guild = bot.guilds[0] if bot.guilds else None
+    if guild is None:
+        return {"error": "bot_not_in_guild"}
+
+    member = guild.get_member(discord_id)
+    if member is None:
+        try:
+            member = await guild.fetch_member(discord_id)
+        except disnake.HTTPException:
+            return {"error": "member_not_found"}
+
+    cfg = _ticket_config("recruit")
+    category_id = cfg.get("category_id")
+    role_id = cfg.get("role_id")
+    extra_role_ids = cfg.get("extra_role_ids", []) or []
+
+    category = guild.get_channel(category_id) if category_id else None
+    role = guild.get_role(role_id) if role_id else None
+    extra_roles = [r for r in (guild.get_role(rid) for rid in extra_role_ids) if r is not None]
+
+    data = tickets_store.load()
+    data["counter"] += 1
+    number = data["counter"]
+    channel_name = f"recruit-{subtype}-{number:04d}"
+
+    overwrites = {
+        guild.default_role: disnake.PermissionOverwrite(view_channel=False),
+        guild.me: disnake.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
+        member: disnake.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+    }
+    if role is not None:
+        overwrites[role] = disnake.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+    for extra_role in extra_roles:
+        overwrites[extra_role] = disnake.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+
+    try:
+        channel = await guild.create_text_channel(
+            channel_name,
+            category=category if isinstance(category, disnake.CategoryChannel) else None,
+            overwrites=overwrites,
+            reason=f"Заявка подана на сайте ({member})",
+        )
+    except disnake.Forbidden:
+        return {"error": "forbidden"}
+
+    data["open"][str(channel.id)] = {
+        "type": "recruit",
+        "subtype": subtype,
+        "number": number,
+        "opener_id": member.id,
+        "claimed_by": None,
+        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "answers": fields,
+        "site_ticket_id": site_ticket_id,
+        "site_ticket_number": site_ticket_number,
+    }
+    tickets_store.save(data)
+
+    label = _recruit_label(subtype)
+    embed = base_embed(label)
+    embed.add_field(name="Открыл", value=member.mention, inline=True)
+    embed.add_field(name="Ответственный", value="Пока не назначен", inline=True)
+    source = f"🌐 Подано на сайте (#{site_ticket_number})" if site_ticket_number else "🌐 Подано на сайте"
+    embed.add_field(name="Источник", value=source, inline=True)
+    for field_name, field_value in fields:
+        embed.add_field(name=field_name, value=field_value or "—", inline=field_name in _SHORT_ANSWER_LABELS)
+    embed.add_field(
+        name=f"{icon_tag('pending')} Статус",
+        value="Заявку рассматривает отдел рекрутинга. Ожидайте, с вами свяжутся.",
+        inline=False,
+    )
+    embed.set_footer(text=f"Заявка #{number} • Семья {FAMILY_NAME}")
+
+    content_parts = [member.mention]
+    if role is not None:
+        content_parts.append(role.mention)
+
+    panel_message = await channel.send(
+        content=" ".join(content_parts),
+        embed=embed,
+        allowed_mentions=disnake.AllowedMentions(users=True, roles=True),
+    )
+
+    fresh = tickets_store.load()
+    if str(channel.id) in fresh["open"]:
+        fresh["open"][str(channel.id)]["panel_message_id"] = panel_message.id
+        tickets_store.save(fresh)
+
+    await _refresh_active_tickets_list(guild)
+
+    return {"channelId": str(channel.id), "number": number}
+
+
+async def _notify_site_decision(info: dict, decision: str, reason: str | None = None) -> None:
+    """Если заявка была создана с сайта (есть site_ticket_id), сообщает сайту о решении
+    (принята/отклонена), чтобы карточка тикета в личном кабинете обновилась сама — иначе
+    заявитель видел бы решение только в Discord."""
+    site_ticket_id = info.get("site_ticket_id")
+    if not site_ticket_id:
+        return
+    secret = config.get("verification.api_secret") or ""
+    if not secret:
+        return
+    base_url = (config.get("verification.site_base_url") or "http://127.0.0.1:3000").rstrip("/")
+    try:
+        session = get_session()
+        async with session.post(
+            f"{base_url}/api/discord/ticket-decision",
+            headers={"X-Api-Key": secret},
+            json={"siteTicketId": site_ticket_id, "decision": decision, "reason": reason},
+            timeout=aiohttp.ClientTimeout(total=15),
+        ):
+            pass
+    except Exception:
+        log.warning("Не удалось уведомить сайт о решении по заявке %s", site_ticket_id, exc_info=True)
+
+
 class TicketOpenModal(disnake.ui.Modal):
     def __init__(self, ticket_key: str, category_label: str | None = None):
         self.ticket_key = ticket_key
@@ -636,7 +772,7 @@ class RecruitApplicationModal(disnake.ui.Modal):
                     custom_id="recoil",
                     style=disnake.TextInputStyle.paragraph,
                     max_length=300,
-                    placeholder="Например: карабин mk2/тяжёлая винтовка + тяжёлый дробовик",
+                    placeholder="Ваш откат",
                 ),
             ]
         else:
@@ -878,6 +1014,7 @@ class RejectReasonModal(disnake.ui.Modal):
 
         info["decision"] = "rejected"
         tickets_store.save(data)
+        await _notify_site_decision(info, "rejected", reason)
 
         try:
             work_embed = _build_work_embed(self.target_channel, info)
@@ -1062,6 +1199,7 @@ class TicketWorkView(disnake.ui.View):
 
         info["decision"] = "accepted"
         tickets_store.save(data)
+        await _notify_site_decision(info, "accepted")
 
         embed = _build_work_embed(self.channel, info)
         _disable_buttons(self, ("twork_claim", "twork_accept", "twork_reject"))

@@ -41,7 +41,41 @@
     "tickets": 0,
     "warns": 0,
     "music": 0,
-    "shop": 0
+    "shop": 0,
+    "automod": 0
+  },
+  "automod": {
+    "enabled": true,
+    "exempt_role_ids": [0],
+    "spam": {
+      "message_count": 5,
+      "interval_seconds": 6
+    },
+    "duplicate": {
+      "repeat_count": 3,
+      "window_seconds": 20
+    },
+    "mentions": {
+      "max_mentions": 5
+    },
+    "links": {
+      "block": true,
+      "allowed_domains": [
+        "youtube.com",
+        "youtu.be",
+        "twitter.com",
+        "x.com",
+        "tenor.com",
+        "giphy.com",
+        "spotify.com",
+        "discord.com",
+        "discordapp.com"
+      ]
+    },
+    "invites": {
+      "block": true
+    },
+    "warn_on_violation": false
   },
   "tickets": {
     "curator": {
@@ -129,5 +163,14 @@
   },
   "help": {
     "refresh_seconds": 43200
+  },
+  "verification": {
+    "channel_id": 0,
+    "verified_role_id": 0,
+    "code_ttl_minutes": 15,
+    "api_host": "127.0.0.1",
+    "api_port": 8787,
+    "api_secret": "",
+    "site_base_url": "http://127.0.0.1:3000"
   }
 }

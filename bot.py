@@ -41,6 +41,7 @@ def _acquire_single_instance_lock() -> None:
         sys.exit(1)
 
 EXTENSIONS = [
+    "cogs.automod",
     "cogs.autorole",
     "cogs.welcome",
     "cogs.moderation",
@@ -63,6 +64,8 @@ EXTENSIONS = [
     "cogs.anticheat",
     "cogs.stats",
     "cogs.help",
+    "cogs.verify",
+    "cogs.site_sync",
 ]
 
 intents = disnake.Intents.default()

@@ -162,3 +162,10 @@ binds_store = JsonStore(
     # created_at, updated_at} — личные шаблоны рассылки для каждого owner/dep.own (cogs/announce.py)
     {"next_id": 1, "binds": {}},
 )
+verify_store = JsonStore(
+    "verify.json",
+    # codes: str(code) -> {user_id, guild_id, username, display_avatar_url, nickname,
+    # guild_joined_at, created_at, expires_at, used} — снимок участника на момент выдачи кода
+    # (cogs/verify.py), чтобы сайт мог привязать аккаунт без повторного похода в Discord API.
+    {"codes": {}},
+)
