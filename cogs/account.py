@@ -248,7 +248,9 @@ def _build_panel_embed() -> disnake.Embed:
 async def _issue_code(inter: disnake.MessageInteraction, purpose: str) -> None:
     # Discord даёт на ответ 3 секунды — подтверждаем взаимодействие сразу, дальше работаем
     # сколько нужно и отвечаем followup'ом (ephemeral — код видит только нажавший).
-    await inter.response.defer(ephemeral=True)
+    # with_message=True обязательно: для компонентов defer без него — «тихое» подтверждение,
+    # и edit_original_response затем переписывает саму панель у всех.
+    await inter.response.defer(ephemeral=True, with_message=True)
 
     now = time.monotonic()
     cooldown_key = (inter.author.id, purpose)
