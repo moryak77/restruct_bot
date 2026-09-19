@@ -229,6 +229,7 @@ class VerifyAPI:
         app.router.add_post("/verify-code", self._handle_verify)
         app.router.add_post("/redeem-account-code", self._handle_redeem_account_code)
         app.router.add_post("/create-coin-claim", self._handle_create_coin_claim)
+        app.router.add_post("/grant-family-role", self._handle_grant_family_role)
         app.router.add_post("/create-recruit-ticket", self._handle_create_recruit_ticket)
         app.router.add_post("/ticket-log", self._handle_ticket_log)
 
@@ -305,6 +306,23 @@ class VerifyAPI:
         expected_id = int(expected_raw) if expected_raw.isdigit() else None
         status, body = await redeem_code(self.bot, code, purpose, client_ip, expected_id)
         return web.json_response(body, status=status)
+
+    async def _handle_grant_family_role(self, request: web.Request) -> web.Response:
+        secret = config.get("verification.api_secret") or ""
+        if request.headers.get("X-Api-Key") != secret:
+            return web.json_response({"error": "unauthorized"}, status=401)
+        try:
+            payload = await request.json()
+        except ValueError:
+            return web.json_response({"error": "invalid_body"}, status=400)
+        raw = str(payload.get("discordId", "")).strip()
+        if not raw.isdigit():
+            return web.json_response({"error": "invalid_body"}, status=400)
+
+        from cogs.tickets import grant_family_role
+
+        result = await grant_family_role(self.bot, int(raw))
+        return web.json_response(result, status=422 if "error" in result else 200)
 
     async def _handle_create_coin_claim(self, request: web.Request) -> web.Response:
         secret = config.get("verification.api_secret") or ""

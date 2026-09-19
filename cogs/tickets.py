@@ -95,6 +95,61 @@ def _disable_buttons(view: disnake.ui.View, custom_ids: tuple[str, ...]) -> None
             child.disabled = True
 
 
+# Роль семьи: выдаётся при принятии заявки в семью. Можно переопределить в config.json:
+# tickets.recruit.family_role_id.
+DEFAULT_FAMILY_ROLE_ID = 1550120188920463470
+
+
+def _family_role_id() -> int:
+    return int(_ticket_config("recruit").get("family_role_id") or DEFAULT_FAMILY_ROLE_ID)
+
+
+async def _grant_roles(
+    guild: disnake.Guild, member: disnake.Member | None, role_ids: list[int], reason: str
+) -> str | None:
+    """Выдаёт роли участнику. Возвращает текст предупреждения для модератора, если что-то не
+    удалось (роль не найдена, роль бота ниже в иерархии, участника нет на сервере)."""
+    if not role_ids:
+        return None
+    if member is None:
+        return "⚠️ Не удалось выдать роль: участника нет на сервере (или он не найден)."
+    warnings: list[str] = []
+    for role_id in role_ids:
+        role = guild.get_role(role_id)
+        if role is None:
+            warnings.append(f"⚠️ Роль `{role_id}` не найдена на сервере.")
+            continue
+        if role in member.roles:
+            continue
+        try:
+            await member.add_roles(role, reason=reason)
+        except disnake.Forbidden:
+            log.warning("Не удалось выдать роль %s участнику %s: роль бота ниже в иерархии.", role_id, member)
+            warnings.append(
+                f"⚠️ Не удалось выдать роль {role.mention} — роль бота ниже неё в иерархии ролей "
+                "сервера. Поднимите роль бота выше в Настройки → Роли."
+            )
+        except disnake.HTTPException as e:
+            log.warning("Не удалось выдать роль %s участнику %s: %s", role_id, member, e)
+            warnings.append(f"⚠️ Не удалось выдать роль {role.mention} (ошибка Discord).")
+    return "\n".join(warnings) or None
+
+
+async def grant_family_role(bot: commands.InteractionBot, discord_id: int) -> dict:
+    """Выдаёт роль семьи — вызывается сайтом, когда заявку в семью принял сотрудник на сайте."""
+    guild = bot.get_guild(int(GUILD_ID)) if GUILD_ID.isdigit() else (bot.guilds[0] if bot.guilds else None)
+    if guild is None:
+        return {"error": "bot_not_in_guild"}
+    member = guild.get_member(discord_id)
+    if member is None:
+        try:
+            member = await guild.fetch_member(discord_id)
+        except disnake.HTTPException:
+            return {"error": "member_not_found"}
+    warning = await _grant_roles(guild, member, [_family_role_id()], "Заявка в семью принята на сайте")
+    return {"ok": True, "warning": warning}
+
+
 async def _add_recruit_progress_role(guild: disnake.Guild, opener: disnake.Member | None) -> str | None:
     """Выдаёт заявителю роль «заявка в обработке» в момент, когда сотрудник забирает его
     заявку. Возвращает текст предупреждения (для эфемерного ответа сотруднику), если роль
@@ -1179,21 +1234,23 @@ class TicketWorkView(disnake.ui.View):
         subtype = info.get("subtype")
         is_family = subtype == "family"
         opener = inter.guild.get_member(info["opener_id"])
-        role_warning = None
+        if opener is None:
+            try:
+                opener = await inter.guild.fetch_member(info["opener_id"])
+            except disnake.HTTPException:
+                opener = None
 
-        accept_role_id = _ticket_config("recruit").get("accept_role_id")
-        if opener is not None and accept_role_id:
-            role = inter.guild.get_role(accept_role_id)
-            if role is None:
-                role_warning = "⚠️ Роль для выдачи не найдена на сервере (проверьте accept_role_id в config.json)."
-            else:
-                try:
-                    await opener.add_roles(role, reason=f"Заявка принята {inter.author} ({inter.author.id})")
-                except disnake.Forbidden:
-                    role_warning = (
-                        f"⚠️ Не удалось выдать роль {role.mention} — роль бота ниже неё в иерархии "
-                        "ролей сервера. Поднимите роль бота выше в Настройки → Роли."
-                    )
+        # Роли за принятую заявку: настроенная в config (accept_role_id) и, для заявки в семью,
+        # роль семьи — без неё участник не видит закрытые каналы и разделы сайта.
+        role_ids: list[int] = []
+        configured = _ticket_config("recruit").get("accept_role_id")
+        if configured:
+            role_ids.append(int(configured))
+        if is_family and _family_role_id() not in role_ids:
+            role_ids.append(_family_role_id())
+        role_warning = await _grant_roles(
+            inter.guild, opener, role_ids, f"Заявка принята {inter.author} ({inter.author.id})"
+        )
 
         await _remove_recruit_progress_role(inter.guild, opener)
 

@@ -609,7 +609,7 @@ async def create_coin_claim_from_site(bot: commands.InteractionBot, payload: dic
         "user_id": member.id,
         "login": str(payload.get("login") or "—")[:64],
         "site_role": str(payload.get("siteRole") or "—")[:32],
-        "task": str(payload.get("task") or "—")[:32],
+        "task": str(payload.get("task") or "—")[:100],
         "coins": int(payload.get("coins") or 0),
         "proofs": proofs,
         "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
