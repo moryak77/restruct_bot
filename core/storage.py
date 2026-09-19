@@ -2,58 +2,71 @@ from __future__ import annotations
 
 import copy
 import json
-from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from typing import Any
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
+from core.turso_http import execute_blocking, execute_nowait
 
-# Один выделенный поток-писатель на всё хранилище — запись на диск больше не блокирует
-# event loop (единственный поток, в котором крутится вся остальная логика бота: heartbeat
-# к Discord, ответы на interactions и т.д.). Именно один воркер, а не пул из нескольких —
-# так задачи гарантированно выполняются в порядке отправки: с несколькими воркерами два
-# save() одного файла могли бы завершиться на диске не в том порядке (OS-планировщик мог
-# бы дописать более старое состояние позже нового). Пропускной способности одного потока
-# с большим запасом хватает — файлы маленькие, пишутся не чаще нескольких раз в секунду.
-_write_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="jsonstore-writer")
+# Хранилище переехало с локальных JSON-файлов на Turso (libSQL) — у Render'а бесплатный
+# план стирает файловую систему контейнера при каждом redeploy/restart, так что локальные
+# файлы не переживали обновления бота. Один общий SQL-запрос при старте вытягивает все
+# ключи разом (кэш в памяти), поэтому создание ~20 JsonStore ниже не бьёт по Turso по разу
+# на каждый стор. Публичный интерфейс JsonStore (load()/save()) не изменился — коги трогать
+# не нужно.
+
+_cache: dict[str, Any] = {}
+_loaded = False
+
+
+def _ensure_loaded() -> None:
+    global _loaded
+    if _loaded:
+        return
+    results = execute_blocking(
+        [
+            ("CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value TEXT NOT NULL)", None),
+            ("SELECT key, value FROM kv_store", None),
+        ]
+    )
+    select_result = results[1]["response"]["result"]
+    for row in select_result.get("rows", []):
+        key, value = row[0]["value"], row[1]["value"]
+        _cache[key] = json.loads(value)
+    _loaded = True
 
 
 class JsonStore:
-    """Простое персистентное хранилище на базе одного JSON-файла.
+    """Персистентное хранилище на базе одной строки в общей таблице Turso `kv_store`
+    (key = имя файла, value = JSON-сериализованные данные).
 
-    Распарсенный JSON держится в памяти: load() отдаёт deepcopy кэша (быстрее round-трипа
-    через json.dumps/loads, но даёт ту же гарантию — каждый load() независим, мутировать
-    результат до save() безопасно). save() остаётся синхронным для вызывающего кода (менять
-    сигнатуру во всех ~20 когах не нужно), но сама запись на диск уходит в фоновый поток —
-    event loop не ждёт файловый I/O."""
+    Распарсенный JSON держится в памяти: load() отдаёт deepcopy кэша (не ходит в сеть на
+    каждый вызов), мутировать результат до save() безопасно. save() остаётся синхронным для
+    вызывающего кода (менять сигнатуру во всех ~20 когах не нужно) — запись в Turso уходит
+    в фоне через выделенный поток с своим event loop (core/turso_http.py)."""
 
     def __init__(self, filename: str, default: Any):
-        self._path = DATA_DIR / filename
+        self._key = filename
         self._default = default
-        self._cache: Any = None
-        if not self._path.exists():
-            self.save(default)
+        _ensure_loaded()
+        if self._key not in _cache:
+            _cache[self._key] = copy.deepcopy(default)
+            self._persist(_cache[self._key])
 
     def load(self) -> Any:
-        if self._cache is None:
-            try:
-                with open(self._path, "r", encoding="utf-8") as f:
-                    self._cache = json.load(f)
-            except (FileNotFoundError, json.JSONDecodeError):
-                self._cache = copy.deepcopy(self._default)
-        return copy.deepcopy(self._cache)
+        return copy.deepcopy(_cache.get(self._key, self._default))
 
     def save(self, data: Any) -> None:
-        self._cache = data
-        # Замораживаем снимок для фонового потока — вызывающий код мог бы продолжить
+        _cache[self._key] = data
+        # Замораживаем снимок для фоновой записи — вызывающий код мог бы продолжить
         # мутировать `data` сразу после save(), это не должно повлиять на то, что реально
-        # уйдёт на диск.
-        _write_pool.submit(self._write_to_disk, copy.deepcopy(data))
+        # уйдёт в Turso.
+        self._persist(copy.deepcopy(data))
 
-    def _write_to_disk(self, data: Any) -> None:
-        with open(self._path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+    def _persist(self, data: Any) -> None:
+        execute_nowait(
+            "INSERT INTO kv_store (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [self._key, json.dumps(data, ensure_ascii=False)],
+        )
 
 
 cars_store = JsonStore(
