@@ -162,20 +162,19 @@ class VerifyAPI:
                         member,
                     )
 
-        channel = guild.get_channel(entry.get("channel_id") or 0)
-        if channel is None:
-            return
-
         try:
-            await channel.send(
-                content=member.mention,
+            await member.send(
                 embed=base_embed(
                     f"{icon_tag('check')} Аккаунт привязан",
-                    "Твой аккаунт сайта успешно привязан к Discord. Этот канал тебе больше не понадобится.",
+                    "Твой аккаунт сайта успешно привязан к Discord. Канал верификации тебе больше не понадобится.",
                 ),
             )
         except disnake.HTTPException:
             pass
+
+        channel = guild.get_channel(entry.get("channel_id") or 0)
+        if channel is None:
+            return
 
         try:
             await channel.set_permissions(
