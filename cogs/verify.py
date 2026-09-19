@@ -203,6 +203,7 @@ class VerifyAPI:
         app = web.Application()
         app.router.add_get("/health", self._handle_health)
         app.router.add_post("/verify-code", self._handle_verify)
+        app.router.add_post("/redeem-account-code", self._handle_redeem_account_code)
         app.router.add_post("/create-recruit-ticket", self._handle_create_recruit_ticket)
         app.router.add_post("/ticket-log", self._handle_ticket_log)
 
@@ -255,6 +256,27 @@ class VerifyAPI:
                 "discordJoinedAt": entry["guild_joined_at"],
             }
         )
+
+    async def _handle_redeem_account_code(self, request: web.Request) -> web.Response:
+        secret = config.get("verification.api_secret") or ""
+        if request.headers.get("X-Api-Key") != secret:
+            return web.json_response({"error": "unauthorized"}, status=401)
+
+        try:
+            payload = await request.json()
+        except ValueError:
+            return web.json_response({"error": "invalid_body"}, status=400)
+
+        code = str(payload.get("code", "")).strip().upper()
+        purpose = str(payload.get("purpose", "")).strip()
+
+        from cogs.account import PURPOSES, redeem_code
+
+        if not code or purpose not in PURPOSES:
+            return web.json_response({"error": "invalid_body"}, status=400)
+
+        status, body = await redeem_code(self.bot, code, purpose)
+        return web.json_response(body, status=status)
 
     async def _handle_create_recruit_ticket(self, request: web.Request) -> web.Response:
         secret = config.get("verification.api_secret") or ""

@@ -182,3 +182,9 @@ verify_store = JsonStore(
     # (cogs/verify.py), чтобы сайт мог привязать аккаунт без повторного похода в Discord API.
     {"codes": {}},
 )
+account_store = JsonStore(
+    "account.json",
+    # codes: str(code) -> {user_id, purpose, created_at, expires_at} - одноразовые коды
+    # подтверждения личности для смены пароля/почты/ника на сайте (cogs/account.py).
+    {"codes": {}},
+)
