@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
+import time
 
 import disnake
 from disnake.ext import commands, tasks
 
 from core.config import config
 from core.http import get_session
+from core.site_events import post_events
 
 log = logging.getLogger("restruct-bot")
 
 PROFILE_SYNC_MINUTES = 5
 MESSAGE_FLUSH_SECONDS = 10
+BANNER_CACHE_SECONDS = 1800
 VOICE_CHECKPOINT_SECONDS = 30
 _BATCH_SIZE = 200
 
@@ -58,7 +62,7 @@ def _member_badges(member: disnake.Member) -> list[str]:
     return badges
 
 
-def _build_profile_event(member: disnake.Member) -> dict:
+def _build_profile_event(member: disnake.Member, extra: dict | None = None) -> dict:
     roles = [
         {"id": str(r.id), "name": r.name, "color": _role_color_hex(r)}
         for r in member.roles
@@ -74,6 +78,9 @@ def _build_profile_event(member: disnake.Member) -> dict:
         "badges": _member_badges(member),
         "boosting": member.premium_since is not None,
         "joinedAt": member.joined_at.isoformat() if member.joined_at else None,
+        # banner/bannerColor добавляются только если баннер удалось получить — иначе сайт
+        # оставит прежнее значение, а не затрёт его пустым.
+        **(extra or {}),
     }
 
 
@@ -87,6 +94,8 @@ class SiteSync(commands.Cog):
         self._voice_joined_at: dict[int, dt.datetime] = {}
         self._voice_checkpointed: set[int] = set()
         self._message_deltas: dict[int, int] = {}
+        self._last_message_at: dict[int, str] = {}
+        self._banner_cache: dict[int, tuple[float, dict]] = {}
         self._linked_ids: set[str] = set()
         self._started = False
 
@@ -134,24 +143,25 @@ class SiteSync(commands.Cog):
             return self._linked_ids
 
     async def _post_events(self, events: list[dict]) -> None:
-        if not events or not _api_secret():
-            return
-        session = get_session()
-        # Батчами по BATCH_SIZE — сервер на 4000+ участников не влезет в один запрос.
-        for i in range(0, len(events), _BATCH_SIZE):
-            chunk = events[i : i + _BATCH_SIZE]
-            try:
-                async with session.post(
-                    f"{_site_base_url()}/api/discord/sync",
-                    headers={"X-Api-Key": _api_secret()},
-                    json={"events": chunk},
-                    timeout=20,
-                ) as resp:
-                    if resp.status != 200:
-                        body = await resp.text()
-                        log.warning("Синк с сайтом вернул %s: %s", resp.status, body[:300])
-            except Exception as e:  # noqa: BLE001 — синк не должен ронять бота
-                log.warning("Не удалось отправить синк на сайт: %s", e)
+        await post_events(events)
+
+    async def _banner_extra(self, user_id: int) -> dict:
+        """Баннер и акцентный цвет профиля Discord. Доступны только через fetch_user, поэтому
+        кэшируем на 30 минут — привязанных участников десятки, а запросов к API должно быть мало."""
+        cached = self._banner_cache.get(user_id)
+        if cached and time.monotonic() - cached[0] < BANNER_CACHE_SECONDS:
+            return cached[1]
+        try:
+            user = await self.bot.fetch_user(user_id)
+        except disnake.HTTPException:
+            return cached[1] if cached else {}
+        extra: dict = {}
+        banner = getattr(user, "banner", None)
+        extra["banner"] = banner.with_size(600).url if banner else None
+        color = getattr(user, "accent_color", None) or getattr(user, "accent_colour", None)
+        extra["bannerColor"] = f"#{color.value:06x}" if color else None
+        self._banner_cache[user_id] = (time.monotonic(), extra)
+        return extra
 
     @tasks.loop(minutes=PROFILE_SYNC_MINUTES)
     async def profile_sync_loop(self) -> None:
@@ -167,7 +177,8 @@ class SiteSync(commands.Cog):
             for member in guild.members:
                 if member.bot or str(member.id) not in self._linked_ids:
                     continue
-                events.append(_build_profile_event(member))
+                events.append(_build_profile_event(member, await self._banner_extra(member.id)))
+                await asyncio.sleep(0.05)  # не заваливаем Discord API запросами баннеров
         await self._post_events(events)
 
     @profile_sync_loop.before_loop
@@ -179,11 +190,17 @@ class SiteSync(commands.Cog):
         if not self._message_deltas:
             return
         events = [
-            {"type": "message_delta", "discordId": str(uid), "delta": delta}
+            {
+                "type": "message_delta",
+                "discordId": str(uid),
+                "delta": delta,
+                "lastMessageAt": self._last_message_at.get(uid),
+            }
             for uid, delta in self._message_deltas.items()
             if delta > 0
         ]
         self._message_deltas.clear()
+        self._last_message_at.clear()
         await self._post_events(events)
 
     @tasks.loop(seconds=VOICE_CHECKPOINT_SECONDS)
@@ -225,6 +242,7 @@ class SiteSync(commands.Cog):
         if message.author.bot or message.guild is None:
             return
         self._message_deltas[message.author.id] = self._message_deltas.get(message.author.id, 0) + 1
+        self._last_message_at[message.author.id] = dt.datetime.now(dt.timezone.utc).isoformat()
 
     @commands.Cog.listener()
     async def on_voice_state_update(

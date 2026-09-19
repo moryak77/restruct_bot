@@ -8,6 +8,7 @@ from disnake.ext import commands, tasks
 
 from cogs.warns import UnwarnSelect, _active_warns, issue_warn, lift_warn
 from core.branding import FAMILY_NAME, base_embed, send_panel
+from core.site_events import report_punishment
 from core.config import config
 from core.icons import icon, icon_tag
 from core.storage import moderation_store, warns_store
@@ -274,6 +275,7 @@ async def _do_ban(
     except disnake.HTTPException as e:
         return False, f"ошибка Discord ({e})", dm_ok
 
+    report_punishment(user.id, "ban", reason, getattr(executor, "display_name", str(executor)), until)
     data = moderation_store.load()
     if delta is not None:
         unban_at = dt.datetime.now(dt.timezone.utc) + delta
@@ -356,6 +358,7 @@ async def _do_kick(
         return False, "не хватает прав (роль бота ниже цели в иерархии)"
     except disnake.HTTPException as e:
         return False, f"ошибка Discord ({e})"
+    report_punishment(member.id, "kick", reason, getattr(executor, "display_name", str(executor)))
     await _log_moderation(
         member.guild,
         _build_action_log_embed(
@@ -374,6 +377,7 @@ async def _do_mute(member: disnake.Member, delta: dt.timedelta, reason: str, exe
     except disnake.HTTPException as e:
         return False, f"ошибка Discord ({e})"
     until = dt.datetime.now(dt.timezone.utc) + delta
+    report_punishment(member.id, "mute", reason, getattr(executor, "display_name", str(executor)), until)
     await _log_moderation(member.guild, _build_action_log_embed(f"{icon_tag('lock')} Мут", member, executor.mention, reason, until=until))
     return True, None
 

@@ -6,6 +6,7 @@ import disnake
 from disnake.ext import commands, tasks
 
 from core.branding import base_embed
+from core.site_events import report_punishment
 from core.config import config, log_channel_id
 from core.icons import icon_tag
 from core.storage import warns_store
@@ -120,6 +121,7 @@ async def issue_warn(
     warns.threshold — общая логика для /warn и заявок на наказание из cogs.moderation,
     чтобы оба пути гарантированно вели себя одинаково."""
     warn = _issue_warn(guild.id, target.id, moderator.id, reason)
+    report_punishment(target.id, "warn", reason, getattr(moderator, "display_name", str(moderator)))
 
     dm_embed = base_embed(
         f"{icon_tag('alert')} Вам выдано предупреждение",
