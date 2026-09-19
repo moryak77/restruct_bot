@@ -42,15 +42,30 @@ def _ttl_minutes() -> int:
     return int(config.get("verification.code_ttl_minutes", 15) or 15)
 
 
+def _site_url() -> str:
+    return (config.get("verification.site_base_url") or "").rstrip("/")
+
+
 def _build_panel_embed() -> disnake.Embed:
     ttl = _ttl_minutes()
+    site = _site_url()
+    site_line = f"[{site.replace('https://', '')}]({site})" if site else "сайте семьи"
     return base_embed(
-        f"{icon_tag('link')} Привязка аккаунта сайта",
+        f"{icon_tag('link')} Привязка Discord к аккаунту сайта",
         (
-            "Нажми кнопку ниже — бот выдаст одноразовый код. Введи его на сайте RESTRUCT "
-            "в личном кабинете, чтобы привязать аккаунт сайта к своему Discord.\n\n"
-            f"{icon_tag('alert')} Код действует **{ttl} минут** и одноразовый — при повторном "
-            "нажатии кнопки старый код аннулируется и выдаётся новый."
+            "Привяжи свой Discord к аккаунту на сайте RESTRUCT — так бот сможет считать твою "
+            "активность (войс и сообщения), начислять R-Coins и показывать твои роли в профиле.\n\n"
+            "**Как это сделать**\n"
+            f"**1.** Зарегистрируйся или войди на {site_line}.\n"
+            "**2.** Нажми кнопку **«Получить код»** ниже — бот покажет код **только тебе**.\n"
+            "**3.** На сайте открой **Профиль → Обзор** и введи код в блоке «Привяжи Discord».\n"
+            "**4.** Готово! Аккаунт привязан, этот канал скроется, а бот напишет тебе в личные сообщения.\n\n"
+            "**Важно знать**\n"
+            f"{icon_tag('lock')} Код создаётся **именно для твоего Discord-аккаунта** — им нельзя привязать "
+            "чужой аккаунт, а твоим кодом не сможет воспользоваться никто другой.\n"
+            f"{icon_tag('alert')} Код действует **{ttl} минут** и работает **один раз**. При повторном нажатии "
+            "кнопки прежний код аннулируется и выдаётся новый.\n"
+            f"{icon_tag('alert')} Никому не сообщай код — сотрудники семьи его не спрашивают."
         ),
         panel_key="verify",
     )
@@ -87,6 +102,9 @@ def _prune_expired(data: dict) -> bool:
 class VerifyPanelView(disnake.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        site = _site_url()
+        if site:
+            self.add_item(disnake.ui.Button(label="Открыть сайт", url=f"{site}/auth/login", emoji=icon("link")))
 
     @disnake.ui.button(
         label="Получить код",
@@ -109,12 +127,18 @@ class VerifyPanelView(disnake.ui.View):
         data["codes"][code] = _snapshot_member(inter.author, inter.channel.id)
         verify_store.save(data)
 
+        site = _site_url()
+        where = f"{site}/profile" if site else "личный кабинет на сайте"
         embed = base_embed(
             f"{icon_tag('key')} Твой код подтверждения",
             (
                 f"## `{code}`\n\n"
-                f"Введи этот код на сайте RESTRUCT в личном кабинете (раздел привязки Discord).\n"
-                f"{icon_tag('alert')} Код действует **{_ttl_minutes()} минут** и работает один раз."
+                f"Открой **{where}**, зайди в **Профиль → Обзор** и введи этот код в блоке "
+                "«Привяжи Discord».\n\n"
+                f"{icon_tag('lock')} Код выдан **твоему Discord-аккаунту** ({inter.author.mention}) и "
+                "подходит только для привязки этого аккаунта.\n"
+                f"{icon_tag('alert')} Действует **{_ttl_minutes()} минут**, работает один раз. "
+                "Не показывай его другим."
             ),
         )
         await inter.response.send_message(embed=embed, ephemeral=True)
@@ -276,7 +300,9 @@ class VerifyAPI:
             return web.json_response({"error": "invalid_body"}, status=400)
 
         client_ip = str(payload.get("clientIp", "")).strip()[:64] or "unknown"
-        status, body = await redeem_code(self.bot, code, purpose, client_ip)
+        expected_raw = str(payload.get("expectedDiscordId", "")).strip()
+        expected_id = int(expected_raw) if expected_raw.isdigit() else None
+        status, body = await redeem_code(self.bot, code, purpose, client_ip, expected_id)
         return web.json_response(body, status=status)
 
     async def _handle_create_recruit_ticket(self, request: web.Request) -> web.Response:

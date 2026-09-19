@@ -24,12 +24,36 @@ CODE_TTL_MINUTES = 10
 _CODE_ALPHABET = "".join(c for c in string.ascii_uppercase + string.digits if c not in "01OIL")
 _CODE_LENGTH = 8
 
-# purpose -> (заголовок кода, что делает код на сайте, путь страницы на сайте)
-PURPOSES: dict[str, tuple[str, str, str]] = {
-    "password": ("Смена пароля", "сменить пароль", "/account"),
-    "reset": ("Восстановление пароля", "восстановить пароль", "/auth/forgot-password"),
-    "email": ("Смена почты", "сменить почту", "/account"),
-    "nickname": ("Смена ника", "сменить ник на сайте", "/account"),
+# purpose -> (заголовок кода, что делает код, страница на сайте, шаги на сайте)
+PURPOSES: dict[str, tuple[str, str, str, str]] = {
+    "password": (
+        "Смена пароля",
+        "сменить пароль",
+        "/profile?tab=security",
+        "Открой **Профиль → Безопасность → Пароль**, введи текущий и новый пароль — "
+        "на последнем шаге сайт попросит этот код.",
+    ),
+    "reset": (
+        "Восстановление пароля",
+        "восстановить пароль",
+        "/auth/forgot-password",
+        "На странице **«Забыл пароль»** введи свой логин или почту, придумай новый пароль — "
+        "на последнем шаге сайт попросит этот код.",
+    ),
+    "email": (
+        "Смена почты",
+        "сменить почту",
+        "/profile?tab=security",
+        "Открой **Профиль → Безопасность → Почта**, введи новый адрес и текущий пароль — "
+        "на последнем шаге сайт попросит этот код.",
+    ),
+    "totp": (
+        "Сброс двухфакторной защиты",
+        "отключить двухфакторную защиту",
+        "/profile?tab=security",
+        "Открой **Профиль → Безопасность → Двухфакторная защита**, нажми «Потерян доступ к "
+        "приложению» и введи пароль — на последнем шаге сайт попросит этот код.",
+    ),
 }
 
 # Защита от перебора кодов. Ручку погашения зовёт только сайт, поэтому «источник» — IP
@@ -150,7 +174,11 @@ async def _notify_used(bot: commands.InteractionBot, user_id: int, action: str) 
 
 
 async def redeem_code(
-    bot: commands.InteractionBot, code: str, purpose: str, client_ip: str = "unknown"
+    bot: commands.InteractionBot,
+    code: str,
+    purpose: str,
+    client_ip: str = "unknown",
+    expected_discord_id: int | None = None,
 ) -> tuple[int, dict]:
     """Погашает код (одноразово). Возвращает (http_status, json). Код с неподходящим
     назначением не гасится — им нельзя воспользоваться «не для того». Между чтением и
@@ -169,27 +197,49 @@ async def redeem_code(
         account_store.save(data)
         return 404, {"error": "invalid_code"}
 
+    # Код принадлежит конкретному Discord-аккаунту: если сайт ждёт код другого человека
+    # (например, код одного игрока ввели в аккаунте другого) — отказываем и НЕ гасим код,
+    # чтобы им нельзя было «сжечь» чужой код или воспользоваться им не тем аккаунтом.
+    if expected_discord_id is not None and entry["user_id"] != expected_discord_id:
+        _register_failure(client_ip, now)
+        account_store.save(data)
+        return 403, {"error": "wrong_owner"}
+
     del data["codes"][code]
     account_store.save(data)
 
-    _, action, _ = PURPOSES[purpose]
+    _, action, _, _ = PURPOSES[purpose]
     # ЛС владельцу — в фоне: сайт не должен ждать ответа Discord API, чтобы получить ответ.
     asyncio.create_task(_notify_used(bot, entry["user_id"], action))
     return 200, {"discordId": str(entry["user_id"])}
 
 
 def _build_panel_embed() -> disnake.Embed:
+    site = _site_base_url()
+    site_line = f"[{site.replace('https://', '')}]({site})" if site else "сайте семьи"
     return base_embed(
         f"{icon_tag('key')} Управление аккаунтом сайта",
         (
-            "Здесь можно безопасно изменить данные аккаунта на сайте RESTRUCT. "
-            "Выбери действие — бот выдаст **одноразовый код**, который нужно ввести на сайте.\n\n"
-            f"{icon_tag('lock')} **Сменить пароль** — если помнишь текущий\n"
+            f"Здесь ты можешь безопасно управлять аккаунтом на {site_line}. "
+            "Выбери действие в списке под сообщением — бот выдаст **одноразовый код**, "
+            "а остальное делается на сайте.\n\n"
+            "**Что доступно**\n"
+            f"{icon_tag('lock')} **Смена пароля** — если помнишь текущий пароль\n"
             f"{icon_tag('key')} **Забыл пароль** — восстановление без входа в аккаунт\n"
-            f"{icon_tag('link')} **Сменить почту**\n"
-            f"{icon_tag('pencil')} **Сменить ник** на сайте\n\n"
-            f"{icon_tag('alert')} Работает только если твой Discord уже привязан к аккаунту сайта. "
-            f"Код действует **{CODE_TTL_MINUTES} минут** и одноразовый. Никому его не показывай."
+            f"{icon_tag('link')} **Смена почты** — привязка нового адреса\n"
+            f"{icon_tag('lock')} **Двухфакторная защита** — если потерян доступ к приложению-аутентификатору\n\n"
+            "**Как это работает**\n"
+            "**1.** Выбери действие в списке — код придёт только тебе (скрытое сообщение).\n"
+            "**2.** Открой сайт и заполни нужные данные: текущий пароль, новое значение и т.д.\n"
+            "**3.** На последнем шаге введи код — и изменение применится.\n\n"
+            "**Безопасность**\n"
+            f"{icon_tag('lock')} Код создаётся **для твоего Discord-аккаунта** и подходит только к "
+            "аккаунту сайта, привязанному к нему. Чужой код не сработает, а твой не сработает у другого.\n"
+            f"{icon_tag('alert')} Код действует **{CODE_TTL_MINUTES} минут** и работает один раз. "
+            "Никому его не показывай — сотрудники его не спрашивают.\n"
+            f"{icon_tag('pencil')} Логин на сайте меняется прямо в профиле — код для этого не нужен.\n\n"
+            f"{icon_tag('alert')} Работает только если твой Discord уже привязан к аккаунту сайта "
+            "(канал верификации)."
         ),
         panel_key="account",
     )
@@ -245,7 +295,7 @@ async def _issue_code(inter: disnake.MessageInteraction, purpose: str) -> None:
     }
     account_store.save(data)
 
-    title, action, path = PURPOSES[purpose]
+    title, action, path, steps = PURPOSES[purpose]
     site = _site_base_url()
     url = f"{site}{path}" if site else "личный кабинет сайта"
     await inter.edit_original_response(
@@ -254,45 +304,55 @@ async def _issue_code(inter: disnake.MessageInteraction, purpose: str) -> None:
             f"{icon_tag('key')} {title}",
             (
                 f"## `{code}`\n\n"
-                f"Открой {url} и введи этот код, чтобы {action}.\n"
-                f"{icon_tag('alert')} Код действует **{CODE_TTL_MINUTES} минут**, работает один раз. "
-                "Не передавай его никому — сотрудники его не спрашивают."
+                f"**Что делать дальше**\n{steps}\n\n"
+                f"Ссылка: {url}\n\n"
+                f"{icon_tag('lock')} Код выдан **твоему Discord-аккаунту** ({inter.author.mention}) и подходит "
+                f"только для аккаунта сайта, привязанного к нему — чтобы {action}.\n"
+                f"{icon_tag('alert')} Действует **{CODE_TTL_MINUTES} минут**, работает один раз. "
+                "Не передавай его никому."
             ),
         ),
     )
 
 
+_ACTION_OPTIONS = [
+    ("password", "Сменить пароль", "Знаю текущий пароль и хочу поставить новый", "lock"),
+    ("reset", "Забыл пароль", "Восстановить доступ без входа в аккаунт", "key"),
+    ("email", "Сменить почту", "Привязать другой адрес электронной почты", "link"),
+    ("totp", "Сбросить двухфакторную защиту", "Потерян доступ к приложению-аутентификатору", "lock"),
+]
+
+
 class AccountPanelView(disnake.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        site = _site_base_url()
+        if site:
+            self.add_item(
+                disnake.ui.Button(label="Открыть сайт", url=f"{site}/profile?tab=security", emoji=icon("link"))
+            )
 
-    @disnake.ui.button(
-        label="Сменить пароль", style=disnake.ButtonStyle.primary, emoji=icon("lock"),
-        custom_id="account_password", row=0,
+    @disnake.ui.string_select(
+        custom_id="account_action",
+        placeholder="Выбери действие…",
+        min_values=1,
+        max_values=1,
+        options=[
+            disnake.SelectOption(label=label, value=value, description=desc, emoji=icon(icon_key))
+            for value, label, desc, icon_key in _ACTION_OPTIONS
+        ],
     )
-    async def change_password(self, button: disnake.ui.Button, inter: disnake.MessageInteraction):
-        await _issue_code(inter, "password")
-
-    @disnake.ui.button(
-        label="Забыл пароль", style=disnake.ButtonStyle.danger, emoji=icon("key"),
-        custom_id="account_reset", row=0,
-    )
-    async def forgot_password(self, button: disnake.ui.Button, inter: disnake.MessageInteraction):
-        await _issue_code(inter, "reset")
-
-    @disnake.ui.button(
-        label="Сменить почту", style=disnake.ButtonStyle.secondary, emoji=icon("link"),
-        custom_id="account_email", row=1,
-    )
-    async def change_email(self, button: disnake.ui.Button, inter: disnake.MessageInteraction):
-        await _issue_code(inter, "email")
-
-    @disnake.ui.button(
-        label="Сменить ник", style=disnake.ButtonStyle.secondary, emoji=icon("pencil"),
-        custom_id="account_nickname", row=1,
-    )
-    async def change_nickname(self, button: disnake.ui.Button, inter: disnake.MessageInteraction):
-        await _issue_code(inter, "nickname")
+    async def choose_action(self, select: disnake.ui.StringSelect, inter: disnake.MessageInteraction):
+        purpose = select.values[0]
+        if purpose not in PURPOSES:
+            await inter.response.send_message("Неизвестное действие.", ephemeral=True)
+            return
+        await _issue_code(inter, purpose)
+        # Сбрасываем выбранный пункт в списке — панелью пользуются все по очереди.
+        try:
+            await inter.message.edit(view=AccountPanelView())
+        except disnake.HTTPException:
+            pass
 
 
 class Account(commands.Cog):
