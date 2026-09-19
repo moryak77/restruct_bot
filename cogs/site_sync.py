@@ -12,7 +12,8 @@ from core.http import get_session
 log = logging.getLogger("restruct-bot")
 
 PROFILE_SYNC_MINUTES = 5
-MESSAGE_FLUSH_SECONDS = 60
+MESSAGE_FLUSH_SECONDS = 10
+VOICE_CHECKPOINT_SECONDS = 30
 _BATCH_SIZE = 200
 
 # disnake PublicUserFlags attr -> формат бейджей, который уже понимает сайт (lib/discord-badges.ts)
@@ -84,6 +85,7 @@ class SiteSync(commands.Cog):
     def __init__(self, bot: commands.InteractionBot):
         self.bot = bot
         self._voice_joined_at: dict[int, dt.datetime] = {}
+        self._voice_checkpointed: set[int] = set()
         self._message_deltas: dict[int, int] = {}
         self._linked_ids: set[str] = set()
         self._started = False
@@ -98,12 +100,21 @@ class SiteSync(commands.Cog):
                 "verification.api_secret пуст — синхронизация с сайтом (роли/войс/сообщения) отключена."
             )
             return
+        # Кто уже сидит в войсе на момент старта бота — иначе их сессия потерялась бы.
+        now = dt.datetime.now(dt.timezone.utc)
+        for guild in self.bot.guilds:
+            for vc in guild.voice_channels:
+                for member in vc.members:
+                    if not member.bot:
+                        self._voice_joined_at.setdefault(member.id, now)
         self.profile_sync_loop.start()
         self.message_flush_loop.start()
+        self.voice_checkpoint_loop.start()
 
     def cog_unload(self) -> None:
         self.profile_sync_loop.cancel()
         self.message_flush_loop.cancel()
+        self.voice_checkpoint_loop.cancel()
 
     async def _fetch_linked_ids(self) -> set[str]:
         session = get_session()
@@ -175,6 +186,32 @@ class SiteSync(commands.Cog):
         self._message_deltas.clear()
         await self._post_events(events)
 
+    @tasks.loop(seconds=VOICE_CHECKPOINT_SECONDS)
+    async def voice_checkpoint_loop(self) -> None:
+        # Раньше время в войсе уходило на сайт только при выходе из канала — статистика
+        # отставала на всю длину сессии. Теперь каждые N секунд отправляем накопленный кусок;
+        # сайт склеивает куски, начинающиеся там, где закончился предыдущий, в одну сессию.
+        if not self._voice_joined_at:
+            return
+        now = dt.datetime.now(dt.timezone.utc)
+        events = []
+        for uid, joined_at in list(self._voice_joined_at.items()):
+            duration = int((now - joined_at).total_seconds())
+            if duration < 1:
+                continue
+            events.append(
+                {
+                    "type": "voice_session",
+                    "discordId": str(uid),
+                    "joinedAt": joined_at.isoformat(),
+                    "leftAt": now.isoformat(),
+                    "durationSeconds": duration,
+                }
+            )
+            self._voice_joined_at[uid] = now
+            self._voice_checkpointed.add(uid)
+        await self._post_events(events)
+
     @commands.Cog.listener()
     async def on_member_update(self, before: disnake.Member, after: disnake.Member):
         if after.bot:
@@ -198,6 +235,7 @@ class SiteSync(commands.Cog):
 
         if before.channel is None and after.channel is not None:
             self._voice_joined_at[member.id] = dt.datetime.now(dt.timezone.utc)
+            self._voice_checkpointed.discard(member.id)
             return
 
         if before.channel is not None and after.channel is None:
@@ -206,7 +244,9 @@ class SiteSync(commands.Cog):
                 return
             left_at = dt.datetime.now(dt.timezone.utc)
             duration = int((left_at - joined_at).total_seconds())
-            if duration < 30:
+            was_checkpointed = member.id in self._voice_checkpointed
+            self._voice_checkpointed.discard(member.id)
+            if duration < 30 and not was_checkpointed:
                 return  # слишком короткая сессия — не считаем (защита от дребезга)
             await self._post_events(
                 [
