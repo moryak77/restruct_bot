@@ -66,6 +66,7 @@ EXTENSIONS = [
     "cogs.help",
     "cogs.verify",
     "cogs.account",
+    "cogs.coins",
     "cogs.site_sync",
 ]
 

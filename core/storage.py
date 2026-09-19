@@ -189,3 +189,8 @@ account_store = JsonStore(
     # подтверждения личности для смены пароля/почты/ника на сайте (cogs/account.py).
     {"codes": {}},
 )
+coins_store = JsonStore(
+    "coins.json",
+    # claims: claim_id -> данные заявки на R-Coins с сайта; by_message: id сообщения модерации -> claim_id
+    {"counter": 0, "claims": {}, "by_message": {}},
+)
