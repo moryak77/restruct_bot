@@ -66,6 +66,7 @@ class JsonStore:
             "INSERT INTO kv_store (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [self._key, json.dumps(data, ensure_ascii=False)],
+            key=self._key,
         )
 
 

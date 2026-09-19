@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 import secrets
@@ -31,12 +32,29 @@ PURPOSES: dict[str, tuple[str, str, str]] = {
     "nickname": ("Смена ника", "сменить ник на сайте", "/account"),
 }
 
-# Защита от перебора кодов: сайт — единственный клиент ручки погашения, поэтому лимит
-# глобальный. 10 неудачных попыток за минуту — и ручка закрывается ещё на минуту.
+# Защита от перебора кодов. Ручку погашения зовёт только сайт, поэтому «источник» — IP
+# посетителя, который сайт передаёт в теле запроса: 10 неверных попыток за минуту с одного
+# IP — и этот IP получает 429 на минуту. Глобальный потолок (запасной) — на случай атаки
+# с множества адресов; он высокий, чтобы обычные пользователи одновременно не мешали друг другу.
 _FAIL_WINDOW = 60.0
-_FAIL_LIMIT = 10
-_recent_failures: list[float] = []
-_blocked_until = 0.0
+_FAIL_LIMIT_PER_IP = 10
+_FAIL_LIMIT_GLOBAL = 300
+_failures_by_ip: dict[str, list[float]] = {}
+_blocked_ip_until: dict[str, float] = {}
+_global_failures: list[float] = []
+
+# Не чаще одного кода в 10 секунд на пользователя и назначение — защита от спама кнопкой.
+_ISSUE_COOLDOWN = 10.0
+_last_issue: dict[tuple[int, str], float] = {}
+
+# Список привязанных Discord-аккаунтов кэшируется: раньше КАЖДЫЙ клик по кнопке ходил на сайт
+# за полным списком до ответа Discord, а у Discord на ответ всего 3 секунды. Кэш живёт 60с;
+# отрицательный ответ перепроверяется, если кэш старше 10с (человек мог привязаться только что).
+_LINKED_TTL = 60.0
+_LINKED_RECHECK = 10.0
+_linked_ids: set[str] = set()
+_linked_fetched_at = 0.0
+_linked_lock = asyncio.Lock()
 
 
 def _site_base_url() -> str:
@@ -63,50 +81,61 @@ def _prune(data: dict) -> None:
     }
 
 
-async def _is_linked(discord_id: int) -> bool | None:
-    """True/False — привязан ли Discord к аккаунту сайта, None — не удалось спросить сайт."""
-    if not _site_base_url() or not _api_secret():
-        return None
+async def _fetch_linked_ids() -> bool:
+    global _linked_ids, _linked_fetched_at
     try:
         async with get_session().get(
             f"{_site_base_url()}/api/discord/linked-ids",
             headers={"X-Api-Key": _api_secret()},
-            timeout=10,
+            timeout=8,
         ) as resp:
             if resp.status != 200:
-                return None
+                return False
             data = await resp.json()
-            return str(discord_id) in set(data.get("ids", []))
     except Exception as e:  # noqa: BLE001
-        log.warning("Не удалось проверить привязку Discord к сайту: %s", e)
+        log.warning("Не удалось получить список привязанных аккаунтов: %s", e)
+        return False
+    _linked_ids = set(data.get("ids", []))
+    _linked_fetched_at = time.monotonic()
+    return True
+
+
+async def _is_linked(discord_id: int) -> bool | None:
+    """True/False — привязан ли Discord к аккаунту сайта, None — сайт недоступен."""
+    if not _site_base_url() or not _api_secret():
         return None
+    key = str(discord_id)
+    age = time.monotonic() - _linked_fetched_at
+    if key in _linked_ids and age < _LINKED_TTL:
+        return True
+    if age >= _LINKED_RECHECK or _linked_fetched_at == 0.0:
+        async with _linked_lock:  # одновременные клики делят один запрос к сайту
+            age = time.monotonic() - _linked_fetched_at
+            if age >= _LINKED_RECHECK or _linked_fetched_at == 0.0:
+                if not await _fetch_linked_ids() and _linked_fetched_at == 0.0:
+                    return None
+    return key in _linked_ids
 
 
-async def redeem_code(bot: commands.InteractionBot, code: str, purpose: str) -> tuple[int, dict]:
-    """Погашает код (одноразово). Возвращает (http_status, json). Код с неподходящим
-    назначением не гасится — им нельзя воспользоваться «не для того»."""
-    global _blocked_until
-    now_ts = time.monotonic()
-    if now_ts < _blocked_until:
-        return 429, {"error": "too_many_attempts"}
+def _register_failure(ip: str, now: float) -> None:
+    recent = [t for t in _failures_by_ip.get(ip, []) if now - t < _FAIL_WINDOW]
+    recent.append(now)
+    _failures_by_ip[ip] = recent
+    if len(recent) >= _FAIL_LIMIT_PER_IP:
+        _blocked_ip_until[ip] = now + _FAIL_WINDOW
+        _failures_by_ip.pop(ip, None)
 
-    data = account_store.load()
-    _prune(data)
-    entry = data["codes"].get(code)
-    if entry is None or entry["purpose"] != purpose:
-        _recent_failures[:] = [t for t in _recent_failures if now_ts - t < _FAIL_WINDOW]
-        _recent_failures.append(now_ts)
-        if len(_recent_failures) >= _FAIL_LIMIT:
-            _blocked_until = now_ts + _FAIL_WINDOW
-            _recent_failures.clear()
-        account_store.save(data)
-        return 404, {"error": "invalid_code"}
+    _global_failures[:] = [t for t in _global_failures if now - t < _FAIL_WINDOW]
+    _global_failures.append(now)
 
-    del data["codes"][code]
-    account_store.save(data)
+    if len(_failures_by_ip) > 5000:  # не даём словарям расти бесконечно
+        for k in [k for k, v in _failures_by_ip.items() if not v or now - v[-1] > _FAIL_WINDOW]:
+            _failures_by_ip.pop(k, None)
+        for k in [k for k, t in _blocked_ip_until.items() if t < now]:
+            _blocked_ip_until.pop(k, None)
 
-    user_id = entry["user_id"]
-    _, action, _ = PURPOSES[purpose]
+
+async def _notify_used(bot: commands.InteractionBot, user_id: int, action: str) -> None:
     try:
         user = bot.get_user(user_id) or await bot.fetch_user(user_id)
         await user.send(
@@ -119,7 +148,34 @@ async def redeem_code(bot: commands.InteractionBot, code: str, purpose: str) -> 
     except (disnake.HTTPException, AttributeError):
         pass
 
-    return 200, {"discordId": str(user_id)}
+
+async def redeem_code(
+    bot: commands.InteractionBot, code: str, purpose: str, client_ip: str = "unknown"
+) -> tuple[int, dict]:
+    """Погашает код (одноразово). Возвращает (http_status, json). Код с неподходящим
+    назначением не гасится — им нельзя воспользоваться «не для того». Между чтением и
+    сохранением нет await, поэтому два одновременных запроса с одним кодом не пройдут оба."""
+    now = time.monotonic()
+    if _blocked_ip_until.get(client_ip, 0.0) > now or (
+        len([t for t in _global_failures if now - t < _FAIL_WINDOW]) >= _FAIL_LIMIT_GLOBAL
+    ):
+        return 429, {"error": "too_many_attempts"}
+
+    data = account_store.load()
+    _prune(data)
+    entry = data["codes"].get(code)
+    if entry is None or entry["purpose"] != purpose:
+        _register_failure(client_ip, now)
+        account_store.save(data)
+        return 404, {"error": "invalid_code"}
+
+    del data["codes"][code]
+    account_store.save(data)
+
+    _, action, _ = PURPOSES[purpose]
+    # ЛС владельцу — в фоне: сайт не должен ждать ответа Discord API, чтобы получить ответ.
+    asyncio.create_task(_notify_used(bot, entry["user_id"], action))
+    return 200, {"discordId": str(entry["user_id"])}
 
 
 def _build_panel_embed() -> disnake.Embed:
@@ -140,19 +196,36 @@ def _build_panel_embed() -> disnake.Embed:
 
 
 async def _issue_code(inter: disnake.MessageInteraction, purpose: str) -> None:
+    # Discord даёт на ответ 3 секунды — подтверждаем взаимодействие сразу, дальше работаем
+    # сколько нужно и отвечаем followup'ом (ephemeral — код видит только нажавший).
+    await inter.response.defer(ephemeral=True)
+
+    now = time.monotonic()
+    cooldown_key = (inter.author.id, purpose)
+    wait = _ISSUE_COOLDOWN - (now - _last_issue.get(cooldown_key, -_ISSUE_COOLDOWN))
+    if wait > 0:
+        await inter.edit_original_response(
+            content=f"Подожди {int(wait) + 1} сек. перед повторным запросом кода."
+        )
+        return
+
     linked = await _is_linked(inter.author.id)
     if linked is False:
-        await inter.response.send_message(
-            "Твой Discord не привязан к аккаунту сайта. Сначала привяжи его в личном "
-            "кабинете на сайте (кнопка «Получить код» в канале верификации).",
-            ephemeral=True,
+        await inter.edit_original_response(
+            content=(
+                "Твой Discord не привязан к аккаунту сайта. Сначала привяжи его в личном "
+                "кабинете на сайте (кнопка «Получить код» в канале верификации)."
+            )
         )
         return
     if linked is None:
-        await inter.response.send_message(
-            "Не удалось связаться с сайтом. Попробуй чуть позже.", ephemeral=True
-        )
+        await inter.edit_original_response(content="Не удалось связаться с сайтом. Попробуй чуть позже.")
         return
+
+    _last_issue[cooldown_key] = now
+    if len(_last_issue) > 5000:
+        for k in [k for k, t in _last_issue.items() if now - t > _ISSUE_COOLDOWN]:
+            _last_issue.pop(k, None)
 
     data = account_store.load()
     _prune(data)
@@ -163,19 +236,20 @@ async def _issue_code(inter: disnake.MessageInteraction, purpose: str) -> None:
         if not (e["user_id"] == inter.author.id and e["purpose"] == purpose)
     }
     code = _generate_code(data["codes"])
-    now = dt.datetime.now(dt.timezone.utc)
+    created = dt.datetime.now(dt.timezone.utc)
     data["codes"][code] = {
         "user_id": inter.author.id,
         "purpose": purpose,
-        "created_at": now.isoformat(),
-        "expires_at": (now + dt.timedelta(minutes=CODE_TTL_MINUTES)).isoformat(),
+        "created_at": created.isoformat(),
+        "expires_at": (created + dt.timedelta(minutes=CODE_TTL_MINUTES)).isoformat(),
     }
     account_store.save(data)
 
     title, action, path = PURPOSES[purpose]
     site = _site_base_url()
     url = f"{site}{path}" if site else "личный кабинет сайта"
-    await inter.response.send_message(
+    await inter.edit_original_response(
+        content=None,
         embed=base_embed(
             f"{icon_tag('key')} {title}",
             (
@@ -185,7 +259,6 @@ async def _issue_code(inter: disnake.MessageInteraction, purpose: str) -> None:
                 "Не передавай его никому — сотрудники его не спрашивают."
             ),
         ),
-        ephemeral=True,
     )
 
 

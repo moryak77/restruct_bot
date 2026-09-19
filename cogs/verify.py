@@ -275,7 +275,8 @@ class VerifyAPI:
         if not code or purpose not in PURPOSES:
             return web.json_response({"error": "invalid_body"}, status=400)
 
-        status, body = await redeem_code(self.bot, code, purpose)
+        client_ip = str(payload.get("clientIp", "")).strip()[:64] or "unknown"
+        status, body = await redeem_code(self.bot, code, purpose, client_ip)
         return web.json_response(body, status=status)
 
     async def _handle_create_recruit_ticket(self, request: web.Request) -> web.Response:
