@@ -156,10 +156,19 @@ class SiteSync(commands.Cog):
         except disnake.HTTPException:
             return cached[1] if cached else {}
         extra: dict = {}
-        banner = getattr(user, "banner", None)
-        extra["banner"] = banner.with_size(600).url if banner else None
-        color = getattr(user, "accent_color", None) or getattr(user, "accent_colour", None)
-        extra["bannerColor"] = f"#{color.value:06x}" if color else None
+        try:
+            banner = getattr(user, "banner", None)
+            if banner:
+                # Размер Discord CDN — степень двойки от 16 до 4096. Анимированные (GIF) баннеры
+                # берём поменьше, чтобы профиль не тянул мегабайты.
+                extra["banner"] = banner.with_size(512 if banner.is_animated() else 1024).url
+            else:
+                extra["banner"] = None
+            color = getattr(user, "accent_color", None) or getattr(user, "accent_colour", None)
+            extra["bannerColor"] = f"#{color.value:06x}" if color else None
+        except Exception as e:  # noqa: BLE001 — баннер второстепенен, не должен ломать синк профилей
+            log.warning("Не удалось получить баннер %s: %s", user_id, e)
+            return cached[1] if cached else {}
         self._banner_cache[user_id] = (time.monotonic(), extra)
         return extra
 
